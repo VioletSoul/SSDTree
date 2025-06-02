@@ -91,7 +91,7 @@ class FileTreeWidget(QTreeWidget):
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
 
         self._root_path = None
-        self._sort_mode = "name"
+        self._sort_mode = "type"  # По умолчанию сортировка по типу
         self.setSortingEnabled(True)
         self.sortByColumn(0, Qt.AscendingOrder)
 
@@ -167,6 +167,7 @@ class FolderSizeWorker(QObject):
     def __init__(self, path):
         super().__init__()
         self.path = path
+        self._is_interrupted = False
 
     @Slot()
     def process(self):
@@ -174,6 +175,8 @@ class FolderSizeWorker(QObject):
             data = {}
             with os.scandir(self.path) as entries:
                 for entry in entries:
+                    if self._is_interrupted:
+                        return
                     try:
                         if entry.is_dir(follow_symlinks=False):
                             size = self.get_folder_size(entry.path)
@@ -190,6 +193,8 @@ class FolderSizeWorker(QObject):
     def get_folder_size(self, folder):
         total = 0
         for root, dirs, files in os.walk(folder):
+            if self._is_interrupted:
+                return 0
             for f in files:
                 try:
                     fp = os.path.join(root, f)
@@ -197,6 +202,9 @@ class FolderSizeWorker(QObject):
                 except Exception:
                     pass
         return total
+
+    def interrupt(self):
+        self._is_interrupted = True
 
 
 class PieChartWidget(QWidget):
@@ -257,10 +265,13 @@ class PieChartWidget(QWidget):
         self.chart.legend().setVisible(True)
 
     def clear_chart(self):
-        # Безопасно очищаем серии и сбрасываем объект серии
         if self.series is not None:
-            self.chart.removeSeries(self.series)
-            self.series.deleteLater()
+            try:
+                self.chart.removeSeries(self.series)
+            except RuntimeError:
+                pass
+            else:
+                self.series.deleteLater()
             self.series = None
         self.chart.setTitle("")
 
@@ -340,6 +351,10 @@ class MainWindow(QMainWindow):
         self.showing_file_info = False
         self.info_overlay = None
 
+        # Устанавливаем в комбобоксе сортировку по типу по умолчанию (индекс 3)
+        self.sort_combo.setCurrentIndex(3)
+        self.tree.set_sort_mode("type")
+
     def on_sort_mode_changed(self, index):
         modes = ["name", "size", "date", "type"]
         mode = modes[index]
@@ -348,11 +363,25 @@ class MainWindow(QMainWindow):
     def open_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку")
         if folder:
+            # Останавливаем и ждем завершения предыдущего потока, если он есть
+            if self.worker is not None and self.thread is not None:
+                self.worker.interrupt()
+                self.thread.quit()
+                self.thread.wait()
+
             self.tree.populate(folder)
             self.showing_file_info = False
             self.remove_info_overlay()
             self.chart_widget.clear_chart()
             self.create_new_series()
+
+            # Программно выделяем корневой элемент и обновляем диаграмму
+            root_item = self.tree.topLevelItem(0)
+            if root_item:
+                self.tree.setCurrentItem(root_item)
+                path = self.tree.get_full_path(root_item)
+                if path:
+                    self.on_tree_selection_changed(path)
 
     def on_tree_selection_changed(self, path):
         if os.path.isdir(path):
@@ -404,7 +433,6 @@ class MainWindow(QMainWindow):
             self.info_overlay = None
 
     def create_new_series(self):
-        # Создаем новый QPieSeries и добавляем в chart
         if self.chart_widget.series is not None:
             try:
                 self.chart_widget.chart.removeSeries(self.chart_widget.series)
@@ -416,14 +444,12 @@ class MainWindow(QMainWindow):
         self.chart_widget.chart.legend().setVisible(True)
 
     def start_folder_size_worker(self, path):
-        try:
-            if self.thread is not None and self.thread.isRunning():
-                self.thread.quit()
-                self.thread.wait()
-        except RuntimeError:
-            pass
+        if self.worker is not None and self.thread is not None:
+            self.worker.interrupt()
+            self.thread.quit()
+            self.thread.wait()
 
-        self.thread = QThread()
+        self.thread = QThread(self)  # Передаем self как родителя, чтобы избежать преждевременного удаления
         self.worker = FolderSizeWorker(path)
         self.worker.moveToThread(self.thread)
 
@@ -444,12 +470,22 @@ class MainWindow(QMainWindow):
     def on_worker_finished(self, data):
         if self.showing_file_info:
             return
+        # Проверяем, что self.worker не None перед использованием
+        if self.worker is None or self.worker.path is None:
+            return
         folder_name = os.path.basename(self.worker.path)
         self.create_new_series()
         self.chart_widget.update_data(data, folder_name)
 
     def on_worker_error(self, error_msg):
         self.chart_widget.chart.setTitle(f"Ошибка при подсчёте размеров: {error_msg}")
+
+    def closeEvent(self, event):
+        if self.worker is not None and self.thread is not None:
+            self.worker.interrupt()
+            self.thread.quit()
+            self.thread.wait()
+        event.accept()
 
 
 if __name__ == "__main__":
