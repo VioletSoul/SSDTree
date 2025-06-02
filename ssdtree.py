@@ -2,11 +2,12 @@ import sys
 import os
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem,
-    QHBoxLayout, QWidget, QToolBar, QFileDialog, QSizePolicy
+    QHBoxLayout, QVBoxLayout, QWidget, QToolBar, QFileDialog,
+    QSizePolicy, QComboBox, QLabel
 )
 from PySide6.QtGui import QAction, QPainter, QColor
 from PySide6.QtCharts import QChart, QChartView, QPieSeries
-from PySide6.QtCore import Qt, Signal, QObject, QThread, Slot
+from PySide6.QtCore import Qt, Signal, QObject, QThread, Slot, QDateTime
 
 
 def human_readable_size(size_bytes):
@@ -18,6 +19,61 @@ def human_readable_size(size_bytes):
         return f"{size_bytes / 1024:.2f} КБ"
     else:
         return f"{size_bytes} Б"
+
+
+class SortableTreeWidgetItem(QTreeWidgetItem):
+    def __lt__(self, other):
+        tree = self.treeWidget()
+        if not tree:
+            return super().__lt__(other)
+
+        column = tree.sortColumn()
+        sort_mode = getattr(tree, "_sort_mode", "name")
+
+        if column == 0:
+            if sort_mode == "name":
+                return self.text(0).lower() < other.text(0).lower()
+            elif sort_mode == "size":
+                try:
+                    s1 = float(self.text(1)) if self.text(1) else 0.0
+                except ValueError:
+                    s1 = 0.0
+                try:
+                    s2 = float(other.text(1)) if other.text(1) else 0.0
+                except ValueError:
+                    s2 = 0.0
+                if s1 == s2:
+                    return self.text(0).lower() < other.text(0).lower()
+                return s1 > s2
+            elif sort_mode == "date":
+                dt1 = self.data(0, Qt.UserRole)
+                dt2 = other.data(0, Qt.UserRole)
+                if dt1 and dt2:
+                    return dt1 < dt2
+                else:
+                    return self.text(0).lower() < other.text(0).lower()
+            elif sort_mode == "type":
+                # Сортируем по расширению файла (без точки), папки идут первыми
+                is_dir1 = self.text(1) == ""
+                is_dir2 = other.text(1) == ""
+                if is_dir1 != is_dir2:
+                    return is_dir1  # папки выше файлов
+                ext1 = os.path.splitext(self.text(0))[1].lower().lstrip('.') if not is_dir1 else ""
+                ext2 = os.path.splitext(other.text(0))[1].lower().lstrip('.') if not is_dir2 else ""
+                if ext1 == ext2:
+                    return self.text(0).lower() < other.text(0).lower()
+                return ext1 < ext2
+        elif column == 1:
+            try:
+                s1 = float(self.text(1)) if self.text(1) else 0.0
+            except ValueError:
+                s1 = 0.0
+            try:
+                s2 = float(other.text(1)) if other.text(1) else 0.0
+            except ValueError:
+                s2 = 0.0
+            return s1 < s2
+        return super().__lt__(other)
 
 
 class FileTreeWidget(QTreeWidget):
@@ -36,6 +92,13 @@ class FileTreeWidget(QTreeWidget):
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
 
         self._root_path = None
+        self._sort_mode = "name"
+        self.setSortingEnabled(True)
+        self.sortByColumn(0, Qt.AscendingOrder)
+
+    def set_sort_mode(self, mode):
+        self._sort_mode = mode
+        self.sortByColumn(0, Qt.AscendingOrder)
 
     def populate(self, path):
         self.clear()
@@ -51,24 +114,25 @@ class FileTreeWidget(QTreeWidget):
             print(f"Ошибка при сканировании {path}: {e}")
             return
 
-        # Получаем список (имя, размер в байтах, is_dir, entry) для сортировки
         items = []
         for entry in entries:
             try:
                 if entry.is_dir(follow_symlinks=False):
-                    size = 0  # Для папок размер 0, чтобы сортировать отдельно
+                    size = 0
                 else:
                     size = entry.stat(follow_symlinks=False).st_size
-                items.append((entry.name, size, entry.is_dir(follow_symlinks=False), entry))
+                ctime = QDateTime.fromSecsSinceEpoch(int(entry.stat(follow_symlinks=False).st_ctime))
+                items.append((entry.name, size, entry.is_dir(follow_symlinks=False), entry, ctime))
             except Exception:
-                items.append((entry.name, 0, entry.is_dir(follow_symlinks=False), entry))
+                items.append((entry.name, 0, entry.is_dir(follow_symlinks=False), entry, None))
 
-        # Сортируем: сначала папки, потом файлы по убыванию размера, по имени для равных размеров
-        items.sort(key=lambda x: (not x[2], -x[1], x[0].lower()))
+        items.sort(key=lambda x: x[0].lower())
 
-        for name, size, is_dir, entry in items:
-            item = QTreeWidgetItem(parent_item)
+        for name, size, is_dir, entry, ctime in items:
+            item = SortableTreeWidgetItem(parent_item)
             item.setText(0, name)
+            if ctime:
+                item.setData(0, Qt.UserRole, ctime)
             if is_dir:
                 item.setText(1, "")
                 self._add_items(entry.path, item)
@@ -205,13 +269,31 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
+
+        main_layout = QHBoxLayout(central)
+
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(5)
+
+        label = QLabel("Сортировка:")
+        left_layout.addWidget(label)
+
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["По имени", "По размеру", "По дате создания", "По типу"])
+        self.sort_combo.currentIndexChanged.connect(self.on_sort_mode_changed)
+        left_layout.addWidget(self.sort_combo)
 
         self.tree = FileTreeWidget(self)
-        layout.addWidget(self.tree)
+        left_layout.addWidget(self.tree)
+
+        left_widget.setMaximumWidth(350)
+
+        main_layout.addWidget(left_widget)
 
         self.chart_widget = PieChartWidget(self)
-        layout.addWidget(self.chart_widget)
+        main_layout.addWidget(self.chart_widget, stretch=1)
 
         toolbar = QToolBar()
         self.addToolBar(toolbar)
@@ -223,6 +305,11 @@ class MainWindow(QMainWindow):
 
         self.thread = None
         self.worker = None
+
+    def on_sort_mode_changed(self, index):
+        modes = ["name", "size", "date", "type"]
+        mode = modes[index]
+        self.tree.set_sort_mode(mode)
 
     def open_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку")
