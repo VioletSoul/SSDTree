@@ -231,6 +231,28 @@ class PieChartWidget(QWidget):
             QColor("#9a6324"), QColor("#fffac8"), QColor("#800000"),
             QColor("#aaffc3"), QColor("#808000"), QColor("#ffd8b1"),
             QColor("#000075"), QColor("#808080"),
+
+            # + еще цвета:
+            QColor("#ff4500"),  # оранжево-красный
+            QColor("#2e8b57"),  # морская волна
+            QColor("#1e90ff"),  # доджер блю
+            QColor("#ff69b4"),  # горячий розовый
+            QColor("#8a2be2"),  # синий фиолетовый
+            QColor("#00ced1"),  # темный бирюзовый
+            QColor("#ff8c00"),  # темно-оранжевый
+            QColor("#7fff00"),  # ярко-зеленый
+            QColor("#dc143c"),  # алый
+            QColor("#00fa9a"),  # средняя весенняя зелень
+            QColor("#6495ed"),  # корнфлауэр блю
+            QColor("#ff1493"),  # глубокий розовый
+            QColor("#228b22"),  # лесной зеленый
+            QColor("#ff6347"),  # томат
+            QColor("#40e0d0"),  # бирюзовый
+            QColor("#daa520"),  # золотистый
+            QColor("#9932cc"),  # темно-фиолетовый
+            QColor("#cd5c5c"),  # индийская красная
+            QColor("#00bfff"),  # глубокий небесно-голубой
+            QColor("#7b68ee"),  # средний синий
         ]
 
     def update_data(self, data, folder_name):
