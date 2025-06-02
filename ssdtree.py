@@ -270,7 +270,7 @@ class PieChartWidget(QWidget):
             slice = self.series.append(name, size)
             slice.setBrush(self.colors[i % len(self.colors)])
             percent = size / total_size * 100
-            if percent > 2:
+            if percent > 1.4:
                 slice.setLabelVisible(True)
                 slice.setLabel(f"{name}\n{percent:.1f}%")
             else:
