@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QAction, QPainter, QColor
 from PySide6.QtCharts import QChart, QChartView, QPieSeries
-from PySide6.QtCore import Qt, Signal, QObject, QThread, Slot, QDateTime
+from PySide6.QtCore import Qt, Signal, QObject, QThread, Slot, QDateTime, QLocale
 
 
 def human_readable_size(size_bytes):
@@ -53,11 +53,10 @@ class SortableTreeWidgetItem(QTreeWidgetItem):
                 else:
                     return self.text(0).lower() < other.text(0).lower()
             elif sort_mode == "type":
-                # Сортируем по расширению файла (без точки), папки идут первыми
                 is_dir1 = self.text(1) == ""
                 is_dir2 = other.text(1) == ""
                 if is_dir1 != is_dir2:
-                    return is_dir1  # папки выше файлов
+                    return is_dir1
                 ext1 = os.path.splitext(self.text(0))[1].lower().lstrip('.') if not is_dir1 else ""
                 ext2 = os.path.splitext(other.text(0))[1].lower().lstrip('.') if not is_dir2 else ""
                 if ext1 == ext2:
@@ -213,6 +212,7 @@ class PieChartWidget(QWidget):
         self.chart_view.setRenderHint(QPainter.Antialiasing)
 
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.chart_view)
 
         self.colors = [
@@ -257,8 +257,39 @@ class PieChartWidget(QWidget):
         self.chart.legend().setVisible(True)
 
     def clear_chart(self):
-        self.series.clear()
+        # Безопасно очищаем серии и сбрасываем объект серии
+        if self.series is not None:
+            self.chart.removeSeries(self.series)
+            self.series.deleteLater()
+            self.series = None
         self.chart.setTitle("")
+
+
+class InfoOverlay(QWidget):
+    def __init__(self, parent, properties):
+        super().__init__(parent)
+        self.properties = properties
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setGeometry(parent.rect())
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setPen(Qt.black)
+        font = painter.font()
+        font.setPointSize(10)
+        painter.setFont(font)
+        margin = 10
+        line_height = painter.fontMetrics().height() + 4
+        y = margin
+        for key, value in self.properties:
+            painter.drawText(margin, y + line_height, f"{key}: {value}")
+            y += line_height
+        painter.end()
+
+    def resizeEvent(self, event):
+        self.setGeometry(self.parent().rect())
 
 
 class MainWindow(QMainWindow):
@@ -301,10 +332,13 @@ class MainWindow(QMainWindow):
         open_action.triggered.connect(self.open_folder)
         toolbar.addAction(open_action)
 
-        self.tree.selection_changed.connect(self.update_chart)
+        self.tree.selection_changed.connect(self.on_tree_selection_changed)
 
         self.thread = None
         self.worker = None
+
+        self.showing_file_info = False
+        self.info_overlay = None
 
     def on_sort_mode_changed(self, index):
         modes = ["name", "size", "date", "type"]
@@ -315,13 +349,71 @@ class MainWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку")
         if folder:
             self.tree.populate(folder)
-            self.start_folder_size_worker(folder)
+            self.showing_file_info = False
+            self.remove_info_overlay()
+            self.chart_widget.clear_chart()
+            self.create_new_series()
 
-    def update_chart(self, path):
+    def on_tree_selection_changed(self, path):
         if os.path.isdir(path):
+            if self.showing_file_info:
+                self.showing_file_info = False
+                self.remove_info_overlay()
+                self.create_new_series()
             self.start_folder_size_worker(path)
         else:
+            self.showing_file_info = True
+            self.remove_info_overlay()
+            self.show_file_properties(path)
+
+    def show_file_properties(self, path):
+        try:
+            stat = os.stat(path)
+        except Exception:
             self.chart_widget.clear_chart()
+            return
+
+        locale = QLocale.system()
+        mtime = QDateTime.fromSecsSinceEpoch(int(stat.st_mtime))
+        atime = QDateTime.fromSecsSinceEpoch(int(stat.st_atime))
+        ctime = QDateTime.fromSecsSinceEpoch(int(stat.st_ctime))
+
+        props = [
+            ("Путь", path),
+            ("Размер", human_readable_size(stat.st_size)),
+            ("Последнее изменение", locale.toString(mtime, QLocale.LongFormat)),
+            ("Последний доступ", locale.toString(atime, QLocale.LongFormat)),
+            ("Время создания", locale.toString(ctime, QLocale.LongFormat)),
+            ("Права доступа", oct(stat.st_mode)[-3:]),
+            ("Является директорией", str(os.path.isdir(path))),
+            ("Является файлом", str(os.path.isfile(path))),
+        ]
+
+        chart = self.chart_widget.chart
+        chart.removeAllSeries()
+        chart.setTitle(f"Свойства файла: {os.path.basename(path)}")
+
+        self.info_overlay = InfoOverlay(self.chart_widget.chart_view.viewport(), props)
+        self.info_overlay.show()
+
+    def remove_info_overlay(self):
+        if self.info_overlay is not None:
+            self.info_overlay.hide()
+            self.info_overlay.setParent(None)
+            self.info_overlay.deleteLater()
+            self.info_overlay = None
+
+    def create_new_series(self):
+        # Создаем новый QPieSeries и добавляем в chart
+        if self.chart_widget.series is not None:
+            try:
+                self.chart_widget.chart.removeSeries(self.chart_widget.series)
+                self.chart_widget.series.deleteLater()
+            except RuntimeError:
+                pass
+        self.chart_widget.series = QPieSeries()
+        self.chart_widget.chart.addSeries(self.chart_widget.series)
+        self.chart_widget.chart.legend().setVisible(True)
 
     def start_folder_size_worker(self, path):
         try:
@@ -350,7 +442,10 @@ class MainWindow(QMainWindow):
         self.worker = None
 
     def on_worker_finished(self, data):
+        if self.showing_file_info:
+            return
         folder_name = os.path.basename(self.worker.path)
+        self.create_new_series()
         self.chart_widget.update_data(data, folder_name)
 
     def on_worker_error(self, error_msg):
