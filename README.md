@@ -1,95 +1,92 @@
-# Дерево папок с диаграммами QtCharts на PySide6
+# Folder Tree with QtCharts Diagrams on PySide6
 
-Приложение на Python с использованием PySide6, которое отображает дерево папок с возможностью сортировки и визуализирует размеры файлов и папок на круговой диаграмме (Pie Chart).
-
----
-
-## Описание
-
-Данная программа позволяет:
-
-- Просматривать содержимое выбранной папки в виде дерева с именами и размерами файлов.
-- Сортировать элементы по имени, размеру, дате создания или типу.
-- При выборе папки отображать круговую диаграмму с распределением размеров файлов и подпапок.
-- При выборе файла показывать его свойства в виде наложения поверх диаграммы.
-- Работать с подсчетом размеров в отдельном потоке для сохранения отзывчивости интерфейса.
+A Python application using PySide6 that displays a sortable folder tree and visualizes file and folder sizes with a pie chart.
 
 ---
 
-## Основные возможности
+## Description
 
-- **Дерево папок** с двумя колонками: имя и размер (в КБ).
-- **Сортировка** по четырём режимам:
-    - По имени
-    - По размеру
-    - По дате создания
-    - По типу файла (расширению)
-- **Круговая диаграмма** QtCharts с наглядным отображением долей каждого файла и папки.
-- **Информационное наложение** с подробными свойствами выбранного файла.
-- **Асинхронный подсчет размеров папок** с возможностью прерывания.
-- Удобный интерфейс с панелью инструментов для выбора папки.
+This program allows you to:
+
+- Browse the contents of a selected folder as a tree with file names and sizes.
+- Sort items by name, size, creation date, or type.
+- When selecting a folder, display a pie chart showing the size distribution of files and subfolders.
+- When selecting a file, show its properties as an overlay on top of the chart.
+- Calculate sizes in a separate thread to keep the UI responsive.
 
 ---
 
-## Используемые технологии
+## Main Features
+
+- **Folder tree** with two columns: name and size (in KB).
+- **Sorting** in four modes:
+  - By name
+  - By size
+  - By creation date
+  - By file type (extension)
+- **QtCharts pie chart** for visual representation of each file and folder's share.
+- **Information overlay** with detailed properties of the selected file.
+- **Asynchronous folder size calculation** with the ability to interrupt.
+- Convenient interface with a toolbar for folder selection.
+
+---
+
+## Technologies Used
 
 - Python 3
 - PySide6 (Qt for Python)
-- Модуль `QtCharts` для построения диаграмм
-- Многопоточность с использованием `QThread` и `QObject`
+- `QtCharts` module for charting
+- Multithreading using `QThread` and `QObject`
 
 ---
 
-## Запуск
+## Launch
 
-1. Установите зависимости (если еще не установлены):
-```
-pip install PySide6
-```
-
-2. Запустите скрипт:
-```
-python3 ssdtree.py
-```
-
-3. В главном окне выберите папку через кнопку "Открыть папку".
-4. Исследуйте содержимое и визуализацию.
+1. Install dependencies (if not already installed):
+    ```
+    pip install PySide6
+    ```
+2. Run the script:
+    ```
+    python3 ssdtree.py
+    ```
+3. In the main window, select a folder using the "Open Folder" button.
+4. Explore the contents and visualization.
 
 ---
 
-## Структура кода
+## Code Structure
 
-- `human_readable_size(size_bytes)` — функция для форматирования размера в читаемый вид (Б, КБ, МБ, ГБ).
-- `SortableTreeWidgetItem` — элемент дерева с поддержкой сортировки по разным критериям.
-- `FileTreeWidget` — виджет дерева папок с возможностью выбора и сортировки.
-- `FolderSizeWorker` — рабочий объект для подсчёта размеров папок в отдельном потоке.
-- `PieChartWidget` — виджет с круговой диаграммой, отображающей размеры элементов.
-- `InfoOverlay` — наложение для отображения свойств выбранного файла.
-- `MainWindow` — главное окно приложения, объединяющее все компоненты и управляющее логикой.
-
----
-
-## Пример использования
-
-- Выберите папку для анализа.
-- В дереве слева выберите папку или файл.
-- Для папки справа отобразится диаграмма с распределением размеров.
-- Для файла появится окно с его свойствами (размер, даты, права доступа и т.п.).
-- Изменяйте режим сортировки через выпадающий список.
+- `human_readable_size(size_bytes)` — function to format size in a human-readable way (B, KB, MB, GB).
+- `SortableTreeWidgetItem` — tree item supporting sorting by different criteria.
+- `FileTreeWidget` — folder tree widget with selection and sorting capabilities.
+- `FolderSizeWorker` — worker object for calculating folder sizes in a separate thread.
+- `PieChartWidget` — pie chart widget displaying element sizes.
+- `InfoOverlay` — overlay for showing selected file properties.
+- `MainWindow` — main application window combining all components and managing logic.
 
 ---
 
-## Лицензия
+## Usage Example
 
-Данный проект предоставляется "как есть" без гарантий. Свободен для использования и модификации.
+- Select a folder for analysis.
+- In the tree on the left, select a folder or file.
+- For a folder, a chart with size distribution will appear on the right.
+- For a file, a window with its properties (size, dates, permissions, etc.) will appear.
+- Change the sorting mode via the dropdown menu.
+
+---
+
+## License
+
+This project is provided "as is" with no warranties. Free to use and modify.
 
 ---
 
-## Контакты и поддержка
+## Contacts & Support
 
-Для вопросов и предложений создайте issue или pull request в репозитории.
+For questions and suggestions, create an issue or pull request in the repository.
 
 ---
-Спасибо за использование!
+Thank you for using!
 ---
-
