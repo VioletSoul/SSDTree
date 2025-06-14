@@ -15,13 +15,13 @@ from PySide6.QtCore import (
 
 def human_readable_size(size_bytes):
     if size_bytes >= 1024 ** 3:
-        return f"{size_bytes / (1024 ** 3):.2f} ГБ"
+        return f"{size_bytes / (1024 ** 3):.2f} GB"
     elif size_bytes >= 1024 ** 2:
-        return f"{size_bytes / (1024 ** 2):.2f} МБ"
+        return f"{size_bytes / (1024 ** 2):.2f} MB"
     elif size_bytes >= 1024:
-        return f"{size_bytes / 1024:.2f} КБ"
+        return f"{size_bytes / 1024:.2f} KB"
     else:
-        return f"{size_bytes} Б"
+        return f"{size_bytes} B"
 
 class DirectoryLoader(QObject):
     items_loaded = Signal(object, list)
@@ -39,15 +39,12 @@ class DirectoryLoader(QObject):
 
     @Slot()
     def load_directory(self):
-        print(f"[DirectoryLoader] START load_directory {self.path}")
         try:
             with QMutexLocker(self._mutex):
                 if self._is_interrupted:
-                    print(f"[DirectoryLoader] INTERRUPTED before start {self.path}")
                     return
             if not os.path.exists(self.path) or not os.path.isdir(self.path):
-                print(f"[DirectoryLoader] ERROR: Path not exists {self.path}")
-                self.error.emit(f"Путь не существует или не является директорией: {self.path}")
+                self.error.emit(f"Path does not exist or is not a directory: {self.path}")
                 return
             count = 0
             batch = []
@@ -55,10 +52,8 @@ class DirectoryLoader(QObject):
                 for entry in entries:
                     with QMutexLocker(self._mutex):
                         if self._is_interrupted:
-                            print(f"[DirectoryLoader] INTERRUPTED during scan {self.path}")
                             return
                     if count >= self.max_items:
-                        print(f"[DirectoryLoader] MAX_ITEMS reached {self.path}")
                         break
                     try:
                         if entry.is_dir(follow_symlinks=False):
@@ -71,31 +66,26 @@ class DirectoryLoader(QObject):
                         batch.append((entry.name, size, entry.is_dir(follow_symlinks=False),
                                       entry.path, ctime, has_children))
                         count += 1
-                    except Exception as e:
-                        print(f"[DirectoryLoader] EXCEPTION: {e}")
+                    except Exception:
                         continue
                     if len(batch) >= self.batch_size:
                         parent_item = self.parent_item_ref()
-                        print(f"[DirectoryLoader] EMIT batch ({len(batch)}) to {parent_item}")
                         if parent_item is not None:
                             batch.sort(key=lambda x: (not x[2], x[0].lower()))
                             self.items_loaded.emit(parent_item, batch.copy())
                         batch.clear()
             if batch:
                 parent_item = self.parent_item_ref()
-                print(f"[DirectoryLoader] EMIT last batch ({len(batch)}) to {parent_item}")
                 if parent_item is not None:
                     batch.sort(key=lambda x: (not x[2], x[0].lower()))
                     self.items_loaded.emit(parent_item, batch.copy())
             with QMutexLocker(self._mutex):
                 if not self._is_interrupted:
                     parent_item = self.parent_item_ref()
-                    print(f"[DirectoryLoader] FINISHED emit to {parent_item}")
                     if parent_item is not None:
                         self.finished.emit(parent_item)
         except Exception as e:
-            print(f"[DirectoryLoader] ERROR: {e}")
-            self.error.emit(f"Ошибка при загрузке директории {self.path}: {str(e)}")
+            self.error.emit(f"Error loading directory {self.path}: {str(e)}")
 
     def _has_children(self, path):
         try:
@@ -105,7 +95,6 @@ class DirectoryLoader(QObject):
             return False
 
     def interrupt(self):
-        print(f"[DirectoryLoader] INTERRUPT called for {self.path}")
         with QMutexLocker(self._mutex):
             self._is_interrupted = True
 
@@ -211,7 +200,6 @@ class FileTreeWidget(QTreeWidget):
         self.sortByColumn(0, Qt.AscendingOrder)
 
     def populate(self, path):
-        print(f"[FileTreeWidget] populate {path}")
         self.clear()
         self._cleanup_threads()
         self._root_path = os.path.abspath(path)
@@ -224,7 +212,6 @@ class FileTreeWidget(QTreeWidget):
         root_item.setExpanded(True)
 
     def on_item_expanded(self, item):
-        print(f"[FileTreeWidget] on_item_expanded {item.get_full_path()}")
         if not isinstance(item, SortableTreeWidgetItem):
             return
         path = item.get_full_path()
@@ -235,10 +222,8 @@ class FileTreeWidget(QTreeWidget):
         self._load_directory_async(path, item)
 
     def _load_directory_async(self, path, parent_item):
-        print(f"[FileTreeWidget] _load_directory_async {path}")
         self._cleanup_threads()
         if parent_item.is_loading():
-            print(f"[FileTreeWidget] Already loading {path}")
             return
         parent_item.set_loading(True)
         thread = QThread(self)
@@ -257,12 +242,9 @@ class FileTreeWidget(QTreeWidget):
 
     @Slot(object, list)
     def on_items_loaded(self, parent_item, items_data):
-        print(f"[FileTreeWidget] on_items_loaded {parent_item} {len(items_data)}")
         if not isinstance(parent_item, SortableTreeWidgetItem):
-            print("[FileTreeWidget] parent_item not SortableTreeWidgetItem")
             return
         if parent_item.treeWidget() is None:
-            print("[FileTreeWidget] parent_item.treeWidget() is None")
             return
         for name, size, is_dir, full_path, ctime, has_children in items_data:
             item = SortableTreeWidgetItem(parent_item)
@@ -283,17 +265,15 @@ class FileTreeWidget(QTreeWidget):
 
     @Slot(object)
     def on_loading_finished(self, parent_item):
-        print(f"[FileTreeWidget] on_loading_finished {parent_item}")
         if isinstance(parent_item, SortableTreeWidgetItem):
             parent_item.set_loading(False)
             parent_item.set_loaded(True)
 
     @Slot(str)
     def on_loading_error(self, error_msg):
-        print(f"[FileTreeWidget] on_loading_error: {error_msg}")
+        pass
 
     def _cleanup_thread(self, item_id):
-        print(f"[FileTreeWidget] _cleanup_thread {item_id}")
         with QMutexLocker(self._mutex):
             if item_id in self._active_threads:
                 thread = self._active_threads[item_id]
@@ -319,7 +299,6 @@ class FileTreeWidget(QTreeWidget):
                 del self._active_workers[item_id]
 
     def _cleanup_threads(self):
-        print("[FileTreeWidget] _cleanup_threads")
         with QMutexLocker(self._mutex):
             for worker in list(self._active_workers.values()):
                 worker.interrupt()
@@ -351,11 +330,9 @@ class FileTreeWidget(QTreeWidget):
             if isinstance(item, SortableTreeWidgetItem):
                 path = item.get_full_path()
                 if path:
-                    print(f"[FileTreeWidget] selection_changed {path}")
                     self.selection_changed.emit(path)
 
     def closeEvent(self, event):
-        print("[FileTreeWidget] closeEvent")
         self._cleanup_threads()
         super().closeEvent(event)
 
@@ -372,7 +349,6 @@ class FolderSizeWorker(QObject):
 
     @Slot()
     def process(self):
-        print(f"[FolderSizeWorker] START process {self.path}")
         try:
             data = {}
             entries = list(os.scandir(self.path))
@@ -380,7 +356,6 @@ class FolderSizeWorker(QObject):
             for idx, entry in enumerate(entries):
                 with QMutexLocker(self._mutex):
                     if self._is_interrupted:
-                        print(f"[FolderSizeWorker] INTERRUPTED {self.path}")
                         return
                 try:
                     if entry.is_dir(follow_symlinks=False):
@@ -390,12 +365,10 @@ class FolderSizeWorker(QObject):
                     if size > 0:
                         data[entry.name] = size
                     self.progress.emit(int((idx+1)/total*100))
-                except Exception as e:
-                    print(f"[FolderSizeWorker] EXCEPTION: {e}")
+                except Exception:
                     continue
             self.finished.emit(data)
         except Exception as e:
-            print(f"[FolderSizeWorker] ERROR: {e}")
             self.error.emit(str(e))
 
     def get_folder_size(self, folder):
@@ -404,7 +377,6 @@ class FolderSizeWorker(QObject):
             for root, dirs, files in os.walk(folder):
                 with QMutexLocker(self._mutex):
                     if self._is_interrupted:
-                        print(f"[FolderSizeWorker] INTERRUPTED get_folder_size {folder}")
                         return 0
                 for f in files:
                     try:
@@ -417,7 +389,6 @@ class FolderSizeWorker(QObject):
         return total
 
     def interrupt(self):
-        print(f"[FolderSizeWorker] INTERRUPT {self.path}")
         with QMutexLocker(self._mutex):
             self._is_interrupted = True
 
@@ -427,7 +398,7 @@ class PieChartWidget(QWidget):
         self.series = QPieSeries()
         self.chart = QChart()
         self.chart.addSeries(self.series)
-        self.chart.setTitle("Размеры файлов и папок")
+        self.chart.setTitle("")
         self.chart.legend().setAlignment(Qt.AlignRight)
         self.chart_view = QChartView(self.chart)
         self.chart_view.setRenderHint(QPainter.Antialiasing)
@@ -447,14 +418,12 @@ class PieChartWidget(QWidget):
             QColor("#7fff00"), QColor("#dc143c"), QColor("#00fa9a"),
         ]
 
-    def update_data(self, data, folder_name):
-        print(f"[PieChartWidget] update_data for {folder_name} | data: {len(data)}")
-        print(f"[PieChartWidget] series={self.series} chart={self.chart}")
+    def update_data(self, data, folder_name, empty_folder_title):
         self.series.clear()
         if not data:
-            self.chart.setTitle("Папка пуста или нет доступа")
+            self.chart.setTitle(empty_folder_title)
             return
-        self.chart.setTitle(f"Размеры в папке: {folder_name}")
+        self.chart.setTitle(folder_name)
         data_sorted = sorted(data.items(), key=lambda x: x[1], reverse=True)
         total_size = sum(size for _, size in data_sorted)
         for i, (name, size) in enumerate(data_sorted):
@@ -474,10 +443,8 @@ class PieChartWidget(QWidget):
             label_text = f"{name} — {human_readable_size(size_bytes)}"
             marker.setLabel(label_text)
         self.chart.legend().setVisible(True)
-        print(f"[PieChartWidget] update_data finished")
 
     def clear_chart(self):
-        print(f"[PieChartWidget] clear_chart")
         if self.series is not None:
             try:
                 self.chart.removeSeries(self.series)
@@ -517,7 +484,58 @@ class InfoOverlay(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Дерево папок и диаграммы QtCharts (Оптимизированная версия)")
+
+        # --- Локализация ---
+        self.languages = ['ru', 'en']
+        self.lang = 'ru'
+        self.texts = {
+            'ru': {
+                'title': "Дерево папок и диаграммы QtCharts (Оптимизированная версия)",
+                'open_folder': "Открыть папку",
+                'sort_label': "Сортировка:",
+                'sort_modes': ["По имени", "По размеру", "По дате создания", "По типу"],
+                'empty_folder': "Папка пуста или нет доступа",
+                'file_props': "Свойства файла: {}",
+                'size_col': "Размер (КБ)",
+                'name_col': "Имя",
+                'props_path': "Путь",
+                'props_size': "Размер",
+                'props_last_mod': "Последнее изменение",
+                'props_last_acc': "Последний доступ",
+                'props_created': "Время создания",
+                'props_rights': "Права доступа",
+                'props_is_dir': "Является директорией",
+                'props_is_file': "Является файлом",
+                'err_size': "Ошибка при подсчёте размеров: {}",
+                'props_yes': "Да",
+                'props_no': "Нет",
+                'select_folder': "Выберите папку",
+            },
+            'en': {
+                'title': "Folder Tree & QtCharts Diagrams (Optimized)",
+                'open_folder': "Open Folder",
+                'sort_label': "Sort by:",
+                'sort_modes': ["By Name", "By Size", "By Creation Date", "By Type"],
+                'empty_folder': "Folder is empty or inaccessible",
+                'file_props': "File properties: {}",
+                'size_col': "Size (KB)",
+                'name_col': "Name",
+                'props_path': "Path",
+                'props_size': "Size",
+                'props_last_mod': "Last modified",
+                'props_last_acc': "Last accessed",
+                'props_created': "Created",
+                'props_rights': "Permissions",
+                'props_is_dir': "Is directory",
+                'props_is_file': "Is file",
+                'err_size': "Error calculating sizes: {}",
+                'props_yes': "Yes",
+                'props_no': "No",
+                'select_folder': "Select Folder",
+            }
+        }
+
+        self.setWindowTitle(self.texts[self.lang]['title'])
         self.resize(1000, 600)
         central = QWidget()
         self.setCentralWidget(central)
@@ -526,10 +544,18 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(5)
-        label = QLabel("Сортировка:")
-        left_layout.addWidget(label)
+
+        # --- Языковой переключатель ---
+        self.combo_lang = QComboBox()
+        self.combo_lang.addItems(['Русский', 'English'])
+        self.combo_lang.setMaximumWidth(120)
+        self.combo_lang.currentIndexChanged.connect(self.switch_language)
+        left_layout.addWidget(self.combo_lang)
+
+        self.label_sort = QLabel(self.texts[self.lang]['sort_label'])
+        left_layout.addWidget(self.label_sort)
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems(["По имени", "По размеру", "По дате создания", "По типу"])
+        self.sort_combo.addItems(self.texts[self.lang]['sort_modes'])
         self.sort_combo.currentIndexChanged.connect(self.on_sort_mode_changed)
         left_layout.addWidget(self.sort_combo)
         self.tree = FileTreeWidget(self)
@@ -543,9 +569,9 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.chart_widget, stretch=1)
         toolbar = QToolBar()
         self.addToolBar(toolbar)
-        open_action = QAction("Открыть папку", self)
-        open_action.triggered.connect(self.open_folder)
-        toolbar.addAction(open_action)
+        self.open_action = QAction(self.texts[self.lang]['open_folder'], self)
+        self.open_action.triggered.connect(self.open_folder)
+        toolbar.addAction(self.open_action)
         self.tree.selection_changed.connect(self.on_tree_selection_changed)
         self.worker = None
         self.thread = None
@@ -555,14 +581,35 @@ class MainWindow(QMainWindow):
         self.sort_combo.setCurrentIndex(3)
         self.tree.set_sort_mode("type")
 
+    def switch_language(self, idx):
+        self.lang = self.languages[idx]
+        self.update_ui_texts()
+
+    def update_ui_texts(self):
+        t = self.texts[self.lang]
+        self.setWindowTitle(t['title'])
+        self.open_action.setText(t['open_folder'])
+        self.label_sort.setText(t['sort_label'])
+        self.sort_combo.blockSignals(True)
+        self.sort_combo.clear()
+        self.sort_combo.addItems(t['sort_modes'])
+        self.sort_combo.setCurrentIndex(3)
+        self.sort_combo.blockSignals(False)
+        self.tree.setHeaderLabels([t['name_col'], t['size_col']])
+        # Обновление диаграммы, если нужно
+        if self.chart_widget.series is not None and self.showing_file_info is False:
+            self.chart_widget.chart.setTitle("")
+        if self.info_overlay is not None:
+            self.remove_info_overlay()
+
     def on_sort_mode_changed(self, index):
         modes = ["name", "size", "date", "type"]
         mode = modes[index]
         self.tree.set_sort_mode(mode)
 
     def open_folder(self):
-        print("[MainWindow] open_folder")
-        folder = QFileDialog.getExistingDirectory(self, "Выберите папку")
+        t = self.texts[self.lang]
+        folder = QFileDialog.getExistingDirectory(self, t['select_folder'])
         if folder:
             self._cancel_previous_operations()
             self.progress_bar.setVisible(True)
@@ -575,7 +622,6 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(1000, lambda: self.progress_bar.setVisible(False))
 
     def _cancel_previous_operations(self):
-        print("[MainWindow] _cancel_previous_operations")
         if self.worker and self.thread:
             self.worker.interrupt()
             self.thread.quit()
@@ -583,7 +629,6 @@ class MainWindow(QMainWindow):
         self.tree._cleanup_threads()
 
     def on_tree_selection_changed(self, path):
-        print(f"[MainWindow] on_tree_selection_changed {path}")
         if os.path.isdir(path):
             if self.showing_file_info:
                 self.showing_file_info = False
@@ -596,7 +641,7 @@ class MainWindow(QMainWindow):
             self.show_file_properties(path)
 
     def show_file_properties(self, path):
-        print(f"[MainWindow] show_file_properties {path}")
+        t = self.texts[self.lang]
         try:
             stat = os.stat(path)
         except Exception:
@@ -607,18 +652,18 @@ class MainWindow(QMainWindow):
         atime = QDateTime.fromSecsSinceEpoch(int(stat.st_atime))
         ctime = QDateTime.fromSecsSinceEpoch(int(stat.st_ctime))
         props = [
-            ("Путь", path),
-            ("Размер", human_readable_size(stat.st_size)),
-            ("Последнее изменение", locale.toString(mtime, QLocale.LongFormat)),
-            ("Последний доступ", locale.toString(atime, QLocale.LongFormat)),
-            ("Время создания", locale.toString(ctime, QLocale.LongFormat)),
-            ("Права доступа", oct(stat.st_mode)[-3:]),
-            ("Является директорией", str(os.path.isdir(path))),
-            ("Является файлом", str(os.path.isfile(path))),
+            (t['props_path'], path),
+            (t['props_size'], human_readable_size(stat.st_size)),
+            (t['props_last_mod'], locale.toString(mtime, QLocale.LongFormat)),
+            (t['props_last_acc'], locale.toString(atime, QLocale.LongFormat)),
+            (t['props_created'], locale.toString(ctime, QLocale.LongFormat)),
+            (t['props_rights'], oct(stat.st_mode)[-3:]),
+            (t['props_is_dir'], t['props_yes'] if os.path.isdir(path) else t['props_no']),
+            (t['props_is_file'], t['props_yes'] if os.path.isfile(path) else t['props_no']),
         ]
         chart = self.chart_widget.chart
         chart.removeAllSeries()
-        chart.setTitle(f"Свойства файла: {os.path.basename(path)}")
+        chart.setTitle(t['file_props'].format(os.path.basename(path)))
         self.info_overlay = InfoOverlay(self.chart_widget.chart_view.viewport(), props)
         self.info_overlay.show()
 
@@ -630,7 +675,6 @@ class MainWindow(QMainWindow):
             self.info_overlay = None
 
     def create_new_series(self):
-        print(f"[MainWindow] create_new_series")
         if self.chart_widget.series is not None:
             try:
                 self.chart_widget.chart.removeSeries(self.chart_widget.series)
@@ -642,7 +686,6 @@ class MainWindow(QMainWindow):
         self.chart_widget.chart.legend().setVisible(True)
 
     def start_folder_size_worker(self, path):
-        print(f"[MainWindow] start_folder_size_worker {path}")
         self.current_worker_id += 1
         worker_id = self.current_worker_id
         self._cancel_previous_operations()
@@ -660,33 +703,29 @@ class MainWindow(QMainWindow):
         self.thread.start()
 
     def on_worker_finished(self, data, worker_id):
-        print(f"[MainWindow] on_worker_finished {worker_id} | self.worker={self.worker} self.chart_widget={self.chart_widget}")
         if worker_id != self.current_worker_id:
-            print("[MainWindow] on_worker_finished: not current worker, skip")
             return
         self.progress_bar.setVisible(False)
         if self.worker and self.worker.path:
             folder_name = os.path.basename(self.worker.path)
-            print(f"[MainWindow] before create_new_series")
             self.create_new_series()
-            print(f"[MainWindow] before update_data")
-            self.chart_widget.update_data(data, folder_name)
-            print(f"[MainWindow] after update_data")
+            self.chart_widget.update_data(
+                data,
+                folder_name,
+                self.texts[self.lang]['empty_folder']
+            )
         self.clear_thread_worker_refs()
-        print(f"[MainWindow] after clear_thread_worker_refs")
 
     def on_worker_error(self, error_msg):
-        print(f"[MainWindow] on_worker_error: {error_msg}")
-        self.chart_widget.chart.setTitle(f"Ошибка при подсчёте размеров: {error_msg}")
+        t = self.texts[self.lang]
+        self.chart_widget.chart.setTitle(t['err_size'].format(error_msg))
         self.progress_bar.setVisible(False)
 
     def clear_thread_worker_refs(self):
-        print("[MainWindow] clear_thread_worker_refs")
         self.thread = None
         self.worker = None
 
     def closeEvent(self, event):
-        print("[MainWindow] closeEvent")
         self._cancel_previous_operations()
         self.tree._cleanup_threads()
         event.accept()
