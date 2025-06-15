@@ -1,5 +1,12 @@
 # Дерево папок с диаграммами QtCharts на PySide6
 
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+![PySide6](https://img.shields.io/badge/PySide6-41CD52?style=flat&logo=qt&logoColor=white)
+![QtCharts](https://img.shields.io/badge/QtCharts-✓-blue)
+![Async](https://img.shields.io/badge/Async-Threaded-brightgreen)
+![Cross-platform](https://img.shields.io/badge/Cross--platform-✓-orange)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Приложение на Python с использованием PySide6, которое отображает дерево папок с возможностью сортировки и визуализирует размеры файлов и папок на круговой диаграмме (Pie Chart).
 
 ---
