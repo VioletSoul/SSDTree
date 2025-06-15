@@ -1,6 +1,7 @@
 import sys
 import os
 import weakref
+import logging
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem,
     QHBoxLayout, QVBoxLayout, QWidget, QToolBar, QFileDialog,
@@ -11,6 +12,12 @@ from PySide6.QtCharts import QChart, QChartView, QPieSeries
 from PySide6.QtCore import (
     Qt, Signal, QObject, QThread, Slot,
     QDateTime, QLocale, QTimer, QMutex, QMutexLocker
+)
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='[%(asctime)s][%(threadName)s][%(levelname)s] %(message)s'
 )
 
 def human_readable_size(size_bytes):
@@ -39,9 +46,11 @@ class DirectoryLoader(QObject):
 
     @Slot()
     def load_directory(self):
+        logging.debug(f"Start loading directory: {self.path}")
         try:
             with QMutexLocker(self._mutex):
                 if self._is_interrupted:
+                    logging.debug("Interrupted before start")
                     return
             if not os.path.exists(self.path) or not os.path.isdir(self.path):
                 self.error.emit(f"Path does not exist or is not a directory: {self.path}")
@@ -52,6 +61,7 @@ class DirectoryLoader(QObject):
                 for entry in entries:
                     with QMutexLocker(self._mutex):
                         if self._is_interrupted:
+                            logging.debug("Interrupted during scan")
                             return
                     if count >= self.max_items:
                         break
@@ -66,7 +76,8 @@ class DirectoryLoader(QObject):
                         batch.append((entry.name, size, entry.is_dir(follow_symlinks=False),
                                       entry.path, ctime, has_children))
                         count += 1
-                    except Exception:
+                    except Exception as e:
+                        logging.warning(f"Exception while scanning {entry.path}: {e}")
                         continue
                     if len(batch) >= self.batch_size:
                         parent_item = self.parent_item_ref()
@@ -84,19 +95,23 @@ class DirectoryLoader(QObject):
                     parent_item = self.parent_item_ref()
                     if parent_item is not None:
                         self.finished.emit(parent_item)
+            logging.debug(f"Finished loading directory: {self.path}")
         except Exception as e:
+            logging.error(f"Error loading directory {self.path}: {str(e)}")
             self.error.emit(f"Error loading directory {self.path}: {str(e)}")
 
     def _has_children(self, path):
         try:
             with os.scandir(path) as entries:
                 return any(True for _ in entries)
-        except:
+        except Exception as e:
+            logging.warning(f"Error checking children for {path}: {e}")
             return False
 
     def interrupt(self):
         with QMutexLocker(self._mutex):
             self._is_interrupted = True
+        logging.debug(f"DirectoryLoader interrupted for {self.path}")
 
 class SortableTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, parent=None):
@@ -222,7 +237,7 @@ class FileTreeWidget(QTreeWidget):
         self._load_directory_async(path, item)
 
     def _load_directory_async(self, path, parent_item):
-        self._cleanup_threads()
+        self._cleanup_thread(id(parent_item))
         if parent_item.is_loading():
             return
         parent_item.set_loading(True)
@@ -238,7 +253,9 @@ class FileTreeWidget(QTreeWidget):
         worker.finished.connect(self.on_loading_finished)
         worker.error.connect(self.on_loading_error)
         worker.finished.connect(lambda: self._cleanup_thread(item_id))
+        thread.finished.connect(thread.deleteLater)
         thread.start()
+        logging.debug(f"Started DirectoryLoader thread for {path}")
 
     @Slot(object, list)
     def on_items_loaded(self, parent_item, items_data):
@@ -268,60 +285,42 @@ class FileTreeWidget(QTreeWidget):
         if isinstance(parent_item, SortableTreeWidgetItem):
             parent_item.set_loading(False)
             parent_item.set_loaded(True)
+        logging.debug(f"Finished loading for {getattr(parent_item, '_full_path', None)}")
 
     @Slot(str)
     def on_loading_error(self, error_msg):
-        pass
+        logging.error(error_msg)
 
     def _cleanup_thread(self, item_id):
         with QMutexLocker(self._mutex):
-            if item_id in self._active_threads:
-                thread = self._active_threads[item_id]
-                thread.quit()
-                thread.wait()
-                thread.deleteLater()
-                del self._active_threads[item_id]
-            if item_id in self._active_workers:
-                worker = self._active_workers[item_id]
-                try:
-                    worker.items_loaded.disconnect()
-                except:
-                    pass
-                try:
-                    worker.finished.disconnect()
-                except:
-                    pass
-                try:
-                    worker.error.disconnect()
-                except:
-                    pass
-                worker.deleteLater()
-                del self._active_workers[item_id]
+            thread = self._active_threads.pop(item_id, None)
+            worker = self._active_workers.pop(item_id, None)
+        if worker:
+            worker.interrupt()
+            try:
+                worker.items_loaded.disconnect()
+            except Exception:
+                pass
+            try:
+                worker.finished.disconnect()
+            except Exception:
+                pass
+            try:
+                worker.error.disconnect()
+            except Exception:
+                pass
+            worker.deleteLater()
+        if thread:
+            thread.quit()
+            thread.wait()
+            thread.deleteLater()
+        logging.debug(f"Cleaned up thread and worker for item_id={item_id}")
 
     def _cleanup_threads(self):
         with QMutexLocker(self._mutex):
-            for worker in list(self._active_workers.values()):
-                worker.interrupt()
-            for thread in list(self._active_threads.values()):
-                thread.quit()
-                thread.wait()
-                thread.deleteLater()
-            for worker in list(self._active_workers.values()):
-                try:
-                    worker.items_loaded.disconnect()
-                except:
-                    pass
-                try:
-                    worker.finished.disconnect()
-                except:
-                    pass
-                try:
-                    worker.error.disconnect()
-                except:
-                    pass
-                worker.deleteLater()
-            self._active_threads.clear()
-            self._active_workers.clear()
+            item_ids = list(self._active_threads.keys())
+        for item_id in item_ids:
+            self._cleanup_thread(item_id)
 
     def on_selection_changed(self):
         selected = self.selectedItems()
@@ -349,6 +348,7 @@ class FolderSizeWorker(QObject):
 
     @Slot()
     def process(self):
+        logging.debug(f"Start calculating sizes in: {self.path}")
         try:
             data = {}
             entries = list(os.scandir(self.path))
@@ -356,6 +356,7 @@ class FolderSizeWorker(QObject):
             for idx, entry in enumerate(entries):
                 with QMutexLocker(self._mutex):
                     if self._is_interrupted:
+                        logging.debug("Interrupted during size calculation")
                         return
                 try:
                     if entry.is_dir(follow_symlinks=False):
@@ -365,10 +366,13 @@ class FolderSizeWorker(QObject):
                     if size > 0:
                         data[entry.name] = size
                     self.progress.emit(int((idx+1)/total*100))
-                except Exception:
+                except Exception as e:
+                    logging.warning(f"Error processing {entry.path}: {e}")
                     continue
             self.finished.emit(data)
+            logging.debug(f"Finished calculating sizes in: {self.path}")
         except Exception as e:
+            logging.error(f"Error in FolderSizeWorker: {e}")
             self.error.emit(str(e))
 
     def get_folder_size(self, folder):
@@ -391,6 +395,7 @@ class FolderSizeWorker(QObject):
     def interrupt(self):
         with QMutexLocker(self._mutex):
             self._is_interrupted = True
+        logging.debug(f"FolderSizeWorker interrupted for {self.path}")
 
 class PieChartWidget(QWidget):
     def __init__(self, parent=None):
@@ -484,7 +489,6 @@ class InfoOverlay(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-
         # --- Локализация ---
         self.languages = ['ru', 'en']
         self.lang = 'ru'
@@ -596,7 +600,6 @@ class MainWindow(QMainWindow):
         self.sort_combo.setCurrentIndex(3)
         self.sort_combo.blockSignals(False)
         self.tree.setHeaderLabels([t['name_col'], t['size_col']])
-        # Обновление диаграммы, если нужно
         if self.chart_widget.series is not None and self.showing_file_info is False:
             self.chart_widget.chart.setTitle("")
         if self.info_overlay is not None:
@@ -626,6 +629,8 @@ class MainWindow(QMainWindow):
             self.worker.interrupt()
             self.thread.quit()
             self.thread.wait(1000)
+            self.worker = None
+            self.thread = None
         self.tree._cleanup_threads()
 
     def on_tree_selection_changed(self, path):
@@ -701,6 +706,7 @@ class MainWindow(QMainWindow):
         self.thread.finished.connect(self.thread.deleteLater)
         self.thread.finished.connect(self.clear_thread_worker_refs)
         self.thread.start()
+        logging.debug(f"Started FolderSizeWorker thread for {path}")
 
     def on_worker_finished(self, data, worker_id):
         if worker_id != self.current_worker_id:
@@ -720,6 +726,7 @@ class MainWindow(QMainWindow):
         t = self.texts[self.lang]
         self.chart_widget.chart.setTitle(t['err_size'].format(error_msg))
         self.progress_bar.setVisible(False)
+        logging.error(f"FolderSizeWorker error: {error_msg}")
 
     def clear_thread_worker_refs(self):
         self.thread = None
