@@ -6,6 +6,8 @@
 ![Async](https://img.shields.io/badge/Async-Threaded-brightgreen)
 ![Cross-platform](https://img.shields.io/badge/Cross--platform-✓-orange)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Stars](https://img.shields.io/github/stars/VioletSoul/SSDTree.svg?style=social)](https://github.com/VioletSoul/SSDTree)
+[![Last Commit](https://img.shields.io/github/last-commit/VioletSoul/SSDTree.svg)](https://github.com/VioletSoul/SSDTree/commits/main)
 
 A Python application using PySide6 that displays a sortable folder tree and visualizes file and folder sizes with a pie chart.
 
