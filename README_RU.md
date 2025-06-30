@@ -6,6 +6,8 @@
 ![Async](https://img.shields.io/badge/Async-Threaded-brightgreen)
 ![Cross-platform](https://img.shields.io/badge/Cross--platform-✓-orange)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Repo Size](https://img.shields.io/github/repo-size/VioletSoul/SSDTree)
+![Code Size](https://img.shields.io/github/languages/code-size/VioletSoul/SSDTree)
 [![Stars](https://img.shields.io/github/stars/VioletSoul/SSDTree.svg?style=social)](https://github.com/VioletSoul/SSDTree)
 [![Last Commit](https://img.shields.io/github/last-commit/VioletSoul/SSDTree.svg)](https://github.com/VioletSoul/SSDTree/commits/main)
 
